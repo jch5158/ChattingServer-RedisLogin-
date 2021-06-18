@@ -1,0 +1,188 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="main">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="PCH">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="Library">
+      <UniqueIdentifier>{b56c39f1-9ffa-4b3f-9e05-68d221263b6b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ServerControl">
+      <UniqueIdentifier>{d920297b-6d86-4aac-8521-7bc900072b46}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Contents">
+      <UniqueIdentifier>{f1c30959-7b2d-47bf-8525-1eda9d01b0f0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Contents\ChattingServer">
+      <UniqueIdentifier>{bbe835fd-034d-48b3-89a9-759839f359c3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Library\CPUProfiler">
+      <UniqueIdentifier>{2cb9d7fe-f1d8-414d-8a07-5f56cc55b0d7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Library\Dump">
+      <UniqueIdentifier>{9c8957d0-d77b-4c0e-af95-bd3f645e3df4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Library\LockFreeObjectFreeList">
+      <UniqueIdentifier>{244540b5-b8f7-4767-bf20-5ff391108685}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Library\LockFreeQueue">
+      <UniqueIdentifier>{1639a495-d4e5-46a4-9bf7-e2f5c3591972}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Library\LockFreeStack">
+      <UniqueIdentifier>{a430e3b7-811d-4d62-be00-a30c5d387c8d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Library\Network">
+      <UniqueIdentifier>{67b9366b-9760-44ac-b270-715053aef1ab}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Library\Parser">
+      <UniqueIdentifier>{48757544-904f-412b-b1c2-9669bbaa2fd0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Library\Profiler">
+      <UniqueIdentifier>{d36f6318-451e-457f-8621-9c87be19984f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Library\SystemLog">
+      <UniqueIdentifier>{d70e62f1-b4a6-4f4f-b969-a39af3943b82}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Library\Network\Message">
+      <UniqueIdentifier>{e4468a27-111b-482c-ad8e-bec391ef7a0d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Library\Network\NetServer">
+      <UniqueIdentifier>{11597982-8bf7-45cd-b079-574075511130}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Library\Network\RingBuffer">
+      <UniqueIdentifier>{ca0c2984-c81a-40f5-bbb3-9bb636d7506b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Library\HardwareProfiler">
+      <UniqueIdentifier>{f265d63a-9ebb-4012-84c4-66dcdb32c381}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Contents\LanMonitoringClient">
+      <UniqueIdentifier>{cc30c96b-49f8-4551-8934-f2fb8adde60d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Library\Network\Protocol">
+      <UniqueIdentifier>{6238f2bf-94c8-4025-8d82-f533ebefcec8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Contents\Object">
+      <UniqueIdentifier>{02e4b307-778e-4f01-931f-8aad15c33447}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Contents\Object\Job">
+      <UniqueIdentifier>{22e39d55-305e-4ece-8267-dd207b76ef0f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Contents\Object\Player">
+      <UniqueIdentifier>{8962d50a-d1fd-457e-942c-461f1456c35b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Library\Network\LanClient">
+      <UniqueIdentifier>{70281d3b-b736-4914-97fa-64250fd50718}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Contents\LanLoginServerClient">
+      <UniqueIdentifier>{48040d09-abab-4f74-afd3-321fe229dd25}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="ChattingServer(RedisLogin).cpp">
+      <Filter>main</Filter>
+    </ClCompile>
+    <ClCompile Include="stdafx.cpp">
+      <Filter>PCH</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Library\PerformanceProfiler\PerformanceProfiler\CPerformanceProfiler.cpp">
+      <Filter>Library\Profiler</Filter>
+    </ClCompile>
+    <ClCompile Include="CChattingServer.cpp">
+      <Filter>Contents\ChattingServer</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Library\NetworkEngine\NetServerEngine\NetServer\CNetServer.cpp">
+      <Filter>Library\Network\NetServer</Filter>
+    </ClCompile>
+    <ClCompile Include="CLanMonitoringClient.cpp">
+      <Filter>Contents\LanMonitoringClient</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Library\NetworkEngine\LanClientEngine\LanClientEngine\CLanClient.cpp">
+      <Filter>Library\Network\LanClient</Filter>
+    </ClCompile>
+    <ClCompile Include="CPlayer.cpp">
+      <Filter>Contents\Object\Player</Filter>
+    </ClCompile>
+    <ClCompile Include="CLanLoginClient.cpp">
+      <Filter>Contents\LanLoginServerClient</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="stdafx.h">
+      <Filter>PCH</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Library\CPUProfiler\CPUProfiler\CCPUProfiler.h">
+      <Filter>Library\CPUProfiler</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Library\DumpLibrary\DumpLibrary\CCrashDump.h">
+      <Filter>Library\Dump</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Library\LockFreeObjectFreeList\ObjectFreeListLib\CLockFreeObjectFreeList.h">
+      <Filter>Library\LockFreeObjectFreeList</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Library\LockFreeObjectFreeList\ObjectFreeListLib\CTLSLockFreeObjectFreeList.h">
+      <Filter>Library\LockFreeObjectFreeList</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Library\LockFreeQueue\LockFreeQueueLib\CLockFreeQueue.h">
+      <Filter>Library\LockFreeQueue</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Library\LockFreeStack\LockFreeStackLib\CLockFreeStack.h">
+      <Filter>Library\LockFreeStack</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Library\MessageLibrary\MessageLibrary\CMessage.h">
+      <Filter>Library\Network\Message</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Library\RingBufferLibrary\RingBufferLib\CRingBuffer.h">
+      <Filter>Library\Network\RingBuffer</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Library\RingBufferLibrary\RingBufferLib\CTemplateRingBuffer.h">
+      <Filter>Library\Network\RingBuffer</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Library\ParserLibrary\ParserLibrary\CParser.h">
+      <Filter>Library\Parser</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Library\PerformanceProfiler\PerformanceProfiler\CPerformanceProfiler.h">
+      <Filter>Library\Profiler</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Library\SystemLogLibrary\SystemLogLibrary\CSystemLog.h">
+      <Filter>Library\SystemLog</Filter>
+    </ClInclude>
+    <ClInclude Include="ServerControl.h">
+      <Filter>ServerControl</Filter>
+    </ClInclude>
+    <ClInclude Include="CChattingServer.h">
+      <Filter>Contents\ChattingServer</Filter>
+    </ClInclude>
+    <ClInclude Include="CJob.h">
+      <Filter>Contents\Object\Job</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Library\NetworkEngine\NetServerEngine\NetServer\CNetServer.h">
+      <Filter>Library\Network\NetServer</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Library\HardwareProfilerLibrary\HardwareProfilerLibrary\CHardwareProfiler.h">
+      <Filter>Library\HardwareProfiler</Filter>
+    </ClInclude>
+    <ClInclude Include="CLanMonitoringClient.h">
+      <Filter>Contents\LanMonitoringClient</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Library\NetworkEngine\LanClientEngine\LanClientEngine\CLanClient.h">
+      <Filter>Library\Network\LanClient</Filter>
+    </ClInclude>
+    <ClInclude Include="Protocol.h">
+      <Filter>Library\Network\Protocol</Filter>
+    </ClInclude>
+    <ClInclude Include="CPlayer.h">
+      <Filter>Contents\Object\Player</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Protocol\GodDamnBug\CommonProtocol.h">
+      <Filter>Library\Network\Protocol</Filter>
+    </ClInclude>
+    <ClInclude Include="CLanLoginClient.h">
+      <Filter>Contents\LanLoginServerClient</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>
