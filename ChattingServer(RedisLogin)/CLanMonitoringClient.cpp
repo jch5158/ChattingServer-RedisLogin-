@@ -124,9 +124,9 @@ void CLanMonitoringClient::UpdateThread(void)
 	{
 		sendProfileInfo();
 
-		mpChatServer->InitializeTPS();
+		//mpChatServer->InitializeTPS();
 
-		mpChatServer->InitializeUpdateTPS();
+		//mpChatServer->InitializeUpdateTPS();
 
 		Sleep(1000);
 	}

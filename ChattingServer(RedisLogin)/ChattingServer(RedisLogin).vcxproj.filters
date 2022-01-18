@@ -81,6 +81,9 @@
     <Filter Include="Contents\LanLoginServerClient">
       <UniqueIdentifier>{48040d09-abab-4f74-afd3-321fe229dd25}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Library\TPSProfiler">
+      <UniqueIdentifier>{a4b1bd48-6263-4b3e-9841-8666dfcf79e2}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="ChattingServer(RedisLogin).cpp">
@@ -109,6 +112,12 @@
     </ClCompile>
     <ClCompile Include="CLanLoginClient.cpp">
       <Filter>Contents\LanLoginServerClient</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Library\PerformanceProfiler\PerformanceProfiler\CTLSPerformanceProfiler.cpp">
+      <Filter>Library\Profiler</Filter>
+    </ClCompile>
+    <ClCompile Include="CJob.cpp">
+      <Filter>Contents\Object\Job</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -151,7 +160,7 @@
     <ClInclude Include="..\..\Library\SystemLogLibrary\SystemLogLibrary\CSystemLog.h">
       <Filter>Library\SystemLog</Filter>
     </ClInclude>
-    <ClInclude Include="ServerControl.h">
+    <ClInclude Include="ServerController.h">
       <Filter>ServerControl</Filter>
     </ClInclude>
     <ClInclude Include="CChattingServer.h">
@@ -184,5 +193,17 @@
     <ClInclude Include="CLanLoginClient.h">
       <Filter>Contents\LanLoginServerClient</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\Library\PerformanceProfiler\PerformanceProfiler\CTLSPerformanceProfiler.h">
+      <Filter>Library\Profiler</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Library\TPSProfiler\TPSProfiler\CTPSProfiler.h">
+      <Filter>Library\TPSProfiler</Filter>
+    </ClInclude>
+    <ClInclude Include="resource.h">
+      <Filter>PCH</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="ChattingServer(RedisLogin).rc" />
   </ItemGroup>
 </Project>

@@ -1,31 +1,41 @@
 #include "stdafx.h"
 
+
+
+
 CChattingServer::CChattingServer(void)
-	: mbStopFlag(FALSE)
-	, mbUpdateLoopFlag(TRUE)
-	, mPlayerCount(0)
+	: mbStopFlag(false)
+	, mbUpdateLoopFlag(true)
+
 	, mAuthenticThreadID(0)
 	, mUpdateThreadID(0)
 	, mUpdateThreadHandle(INVALID_HANDLE_VALUE)
 	, mAuthenticThreadHandle(INVALID_HANDLE_VALUE)
-	, mUpdateEvent(CreateEvent(NULL, FALSE, FALSE, NULL))
-	, mAuthenticEvent(CreateEvent(NULL, FALSE, FALSE, NULL))
-	, mSectorAround{ 0, }
+
+	, mUpdateEvent(CreateEvent(NULL, false, false, NULL))
+	, mAuthenticEvent(CreateEvent(NULL, false, false, NULL))
+
+	, mUpdateTPS(0)
+	, mPlayerCount(0)
+
+	, mRedisConnector()
+
 	, mJobQueue()
 	, mAuthenticJobQueue()
-	, mConnectionStateMap()
+
+	, mAccountNoMap()
 	, mPlayerMap()
-	, mSectorArray()
+	, mPlayerSectorMap()
+	, mSectorAround{ 0, }
+
 {
 	CRedisConnector::CallWSAStartup();
 
-	// 섹터를 미리 구해놓는다.
-	for (INT indexY = 0; indexY < chattingserver::SECTOR_MAX_HEIGHT; ++indexY)
+	// 주변 섹터를 미리 구해놓는다.
+	for (int indexY = 0; indexY < chattingserver::SECTOR_MAX_HEIGHT; ++indexY)
 	{
-		for (INT indexX = 0; indexX < chattingserver::SECTOR_MAX_WIDTH; ++indexX)
-		{
+		for (int indexX = 0; indexX < chattingserver::SECTOR_MAX_WIDTH; ++indexX)
 			getSectorAround(indexY, indexX, &mSectorAround[indexY][indexX]);	
-		}
 	}
 }
 
@@ -38,294 +48,58 @@ CChattingServer::~CChattingServer(void)
 	CloseHandle(mUpdateEvent);
 
 	CloseHandle(mAuthenticEvent);
-
-	CRedisConnector::CallWSACleanup();
 }
 
-BOOL CChattingServer::setupUpdateThread(void)
+bool CChattingServer::OnStart(void)
 {
-	mUpdateThreadHandle = (HANDLE)_beginthreadex(NULL, 0, (_beginthreadex_proc_type)ExecuteUpdateThread, this, NULL, (UINT*)mUpdateThreadID);
-	if (mUpdateThreadHandle == INVALID_HANDLE_VALUE)
-	{
-		CSystemLog::GetInstance()->Log(TRUE, CSystemLog::eLogLevel::LogLevelError, L"ChattingServer", L"[setupUpdateThread] _beginthreadex Error : %d", GetLastError());
+	if (setupUpdateThread() == false)
+		return false;
 
-		return FALSE;
-	}
+	if (setupAuthenticThread() == false)
+		return false;
 
-	return TRUE;
-
+	return true;
 }
 
-BOOL CChattingServer::setupAuthenticThread(void)
+void CChattingServer::OnStop(void)
 {
-	mAuthenticThreadHandle = (HANDLE)_beginthreadex(NULL, 0, (_beginthreadex_proc_type)ExecuteAuthenticThread, this, NULL, (UINT*)mAuthenticThreadID);
-	if (mAuthenticThreadHandle == INVALID_HANDLE_VALUE)
-	{
-		CSystemLog::GetInstance()->Log(TRUE, CSystemLog::eLogLevel::LogLevelError, L"ChattingServer", L"[setupAuthenticThread] _beginthreadex Error : %d", GetLastError());
+	CJob* pJob = createJob(0, CJob::eJobType::SERVER_STOP_JOB, nullptr);
 
-		return FALSE;
-	}
+	mJobQueue.Enqueue(pJob);
 
-	return TRUE;
-}
-
-
-void CChattingServer::closeWaitUpdateThread(void)
-{
-	if (mUpdateThreadHandle == INVALID_HANDLE_VALUE)
-	{
-		return;
-	}
-
-	if (WaitForSingleObject(mUpdateThreadHandle, INFINITE) != WAIT_OBJECT_0)
-	{
-		CSystemLog::GetInstance()->Log(TRUE, CSystemLog::eLogLevel::LogLevelError, L"ChattingServer", L"[closeWaitUpdateThread] WaitForSingleObject Error : %d", GetLastError());
-
-		CCrashDump::Crash();
-	}
-
-	CloseHandle(mUpdateThreadHandle);
-
-	mUpdateThreadHandle = INVALID_HANDLE_VALUE;
-	
-	return;
-}
-
-void CChattingServer::closeWaitAuthenticThread(void)
-{
-	if (mAuthenticThreadHandle = INVALID_HANDLE_VALUE)
-	{
-		return;
-	}
-
-	if (WaitForSingleObject(mAuthenticThreadHandle, INFINITE) != WAIT_OBJECT_0)
-	{
-		CSystemLog::GetInstance()->Log(TRUE, CSystemLog::eLogLevel::LogLevelError, L"ChattingServer", L"[closeWaitAuthenticThread] WaitForSingleObject Error : %d", GetLastError());
-
-		CCrashDump::Crash();
-	}
-
-	CloseHandle(mAuthenticThreadHandle);
-
-	mAuthenticThreadHandle = INVALID_HANDLE_VALUE;
+	SetEvent(mUpdateEvent);
 
 	return;
 }
 
-DWORD CChattingServer::ExecuteUpdateThread(void* pParam)
+void CChattingServer::OnStartAcceptThread(void)
 {
-	CChattingServer* pChattingServer = (CChattingServer*)pParam;
-
-	pChattingServer->UpdateThread();
-		
-	return 1;
-}
-
-void CChattingServer::UpdateThread(void)
-{
-	CJob* pJob = nullptr;
-	
-	while (mbUpdateLoopFlag == TRUE)
-	{
-		if (mJobQueue.Dequeue(&pJob) == FALSE)
-		{
-			if (WaitForSingleObject(mUpdateEvent, INFINITE) != WAIT_OBJECT_0)
-			{
-				CCrashDump::Crash();
-			}
-
-			continue;
-		}
-
-		{
-			//CPerformanceProfiler profiler(L"Update Thread");
-
-			jobProcedure(pJob);
-
-			pJob->Free();
-
-			InterlockedIncrement(&mUpdateTPS);
-		}
-	}
-
 	return;
 }
 
-DWORD CChattingServer::ExecuteAuthenticThread(void* pParam)
+void CChattingServer::OnStartWorkerThread(void)
 {
-	CChattingServer* pChattingServer = (CChattingServer*)pParam;
-
-	pChattingServer->AuthenticThread();
-
-	return 1;
+	return;
 }
 
-
-void CChattingServer::AuthenticThread(void)
-{	
-	mRedisConnector.Connect();
-
-	for (;;)
-	{
-		INT useSize = mAuthenticJobQueue.GetUseSize();
-		if (useSize == 0)
-		{
-			if(WaitForSingleObject(mAuthenticEvent, INFINITE) != WAIT_OBJECT_0)
-			{
-				CCrashDump::Crash();
-			}
-
-			continue;
-		}
-
-		INT directDequeueSize = mAuthenticJobQueue.GetDirectDequeueSize();
-
-		INT remainSize = useSize - directDequeueSize;
-
-		CJob **pAuthenticJobArray = mAuthenticJobQueue.GetFrontBufferPtr();
-
-		CJob* pAuthenticJob;
-
-		for (INT index = 0; index < directDequeueSize; ++index)
-		{
-			pAuthenticJob = pAuthenticJobArray[index];
-
-			pAuthenticJob->mJobType = CJob::eJobType::LOGIN_JOB;
-			
-			// 더미 계정은 토큰 인증을 하지 않는다.
-			if (pAuthenticJob->mAccountNumber > 999999)
-			{
-				if (mRedisConnector.CompareToken(pAuthenticJob->mAccountNumber, pAuthenticJob->mSessionKey, 64) == TRUE)
-				{
-					pAuthenticJob->mLoginResult = TRUE;
-				}
-				else
-				{
-					pAuthenticJob->mLoginResult = FALSE;
-				}
-			}
-			else
-			{
-				pAuthenticJob->mLoginResult = TRUE;
-			}
-
-			mJobQueue.Enqueue(pAuthenticJob);
-
-			SetEvent(mUpdateEvent);
-		}
-
-		if (remainSize > 0)
-		{
-			pAuthenticJobArray = mAuthenticJobQueue.GetBufferPtr();
-
-			for (INT index = 0; index < remainSize; ++index)
-			{
-				pAuthenticJob = pAuthenticJobArray[index];
-
-				pAuthenticJob->mJobType = CJob::eJobType::LOGIN_JOB;
-
-				if (mRedisConnector.CompareToken(pAuthenticJob->mAccountNumber, pAuthenticJob->mSessionKey, 64) == TRUE)
-				{
-					pAuthenticJob->mLoginResult = TRUE;
-				}
-				else
-				{
-					pAuthenticJob->mLoginResult = FALSE;
-				}
-
-				mJobQueue.Enqueue(pAuthenticJob);
-
-				SetEvent(mUpdateEvent);
-			}
-		}
-		else
-		{
-			remainSize = 0;
-		}
-
-		mAuthenticJobQueue.MoveFront(directDequeueSize + remainSize);
-	}
-
-	mRedisConnector.Disconnect();
-
+void CChattingServer::OnCloseAcceptThread(void)
+{
 	return;
 }
 
 
-BOOL CChattingServer::insertPlayerMap(UINT64 accountNo, CPlayer* pPlayer)
+void CChattingServer::OnCloseWorkerThread(void)
 {
-	return mPlayerMap.insert(std::make_pair(accountNo,pPlayer)).second;
+	return;
 }
 
-
-BOOL CChattingServer::erasePlayerMap(UINT64 accountNo)
+bool CChattingServer::OnConnectionRequest(const wchar_t* userIP, unsigned short userPort)
 {
-	return mPlayerMap.erase(accountNo);
+	return false;
 }
 
 
-CPlayer* CChattingServer::findPlayerFromPlayerMap(UINT64 accountNo)
-{	
-	auto iter = mPlayerMap.find(accountNo);
-	if (iter == mPlayerMap.end())
-	{
-		return nullptr;
-	}
-
-	return iter->second;
-}
-
-BOOL CChattingServer::insertPlayerSectorMap(INT sectorPosX, INT sectorPosY, UINT64 accountNo, CPlayer* pPlayer)
-{
-	if (sectorPosX >= chattingserver::SECTOR_MAX_WIDTH || sectorPosY >= chattingserver::SECTOR_MAX_HEIGHT)
-	{
-		return FALSE;
-	}
-
-	return mSectorArray[sectorPosY][sectorPosX].insert(std::make_pair(accountNo, pPlayer)).second;
-}
-
-
-BOOL CChattingServer::erasePlayerSectorMap(INT sectorPosX, INT sectorPosY, UINT64 accountNo)
-{
-	if (sectorPosX >= chattingserver::SECTOR_MAX_WIDTH || sectorPosY >= chattingserver::SECTOR_MAX_HEIGHT)
-	{
-		return FALSE;
-	}
-
-	return mSectorArray[sectorPosY][sectorPosX].erase(accountNo);
-}
-
-
-DWORD CChattingServer::GetJobQueueStatus(void) const
-{
-	return mJobQueue.GetUseSize();
-}
-
-
-DWORD CChattingServer::GetPlayerCount(void)
-{
-	return mPlayerCount;
-}
-
-BOOL CChattingServer::OnStart(void)
-{
-	if (setupUpdateThread() == FALSE)
-	{
-		return FALSE;
-	}
-
-	if (setupAuthenticThread() == FALSE)
-	{
-		return FALSE;
-	}
-
-	return TRUE;
-}
-
-
-// 신규 세션이 접속하였음을 JobQueue에 Job을 던져서 알려준다.
-void CChattingServer::OnClientJoin(UINT64 sessionID)
+void CChattingServer::OnClientJoin(unsigned long long sessionID)
 {
 	CJob* pJob = createJob(sessionID, CJob::eJobType::CLIENT_JOIN_JOB);
 
@@ -336,9 +110,7 @@ void CChattingServer::OnClientJoin(UINT64 sessionID)
 	return;
 }
 
-
-// 세션이 종료하였음을 JobQueue를 통해 알려준다.
-void CChattingServer::OnClientLeave(UINT64 sessionID)
+void CChattingServer::OnClientLeave(unsigned long long sessionID)
 {
 	CJob* pJob = createJob(sessionID, CJob::eJobType::CLIENT_LEAVE_JOB);
 
@@ -350,20 +122,9 @@ void CChattingServer::OnClientLeave(UINT64 sessionID)
 }
 
 
-void CChattingServer::OnStartAcceptThread(void)
+
+void CChattingServer::OnRecv(unsigned long long sessionID, CMessage* pMessage)
 {
-
-	return;
-}
-
-void CChattingServer::OnStartWorkerThread(void)
-{
-
-	return;
-}
-
-void CChattingServer::OnRecv(UINT64 sessionID, CMessage* pMessage)
-{			
 	CJob* pJob = createJob(sessionID, CJob::eJobType::MESSAGE_JOB, pMessage);
 
 	pMessage->AddReferenceCount();
@@ -376,54 +137,26 @@ void CChattingServer::OnRecv(UINT64 sessionID, CMessage* pMessage)
 }
 
 
-// 화이트 IP
-BOOL CChattingServer::OnConnectionRequest(const WCHAR* userIP, WORD userPort)
+
+void CChattingServer::OnError(unsigned int errorCode, const wchar_t* errorMessage)
 {
-
-	return TRUE;
-}
-
-
-void CChattingServer::OnCloseWorkerThread(void)
-{
-
-	return;
-}
-
-void CChattingServer::OnCloseAcceptThread(void)
-{
-
 	return;
 }
 
 
-
-void CChattingServer::OnError(DWORD errorCode,const WCHAR* errorMessage)
+int CChattingServer::GetJobQueueStatus(void) const
 {
-
-
+	return mJobQueue.GetUseSize();
 }
 
-void CChattingServer::OnStop(void)
-{	
-	CJob* pJob = createJob(0, CJob::eJobType::SERVER_STOP_JOB, nullptr);
 
-	mJobQueue.Enqueue(pJob);
-
-	SetEvent(mUpdateEvent);
-
-	return;
-}
-
-void CChattingServer::SetLoginClient(CLanLoginClient* pLanLoginClient)
+int CChattingServer::GetPlayerCount(void) const
 {
-	mpLanLoginClient = pLanLoginClient;
-
-	return;
+	return mPlayerCount;
 }
 
 
-LONG CChattingServer::GetUpdateTPS(void) const
+long CChattingServer::GetUpdateTPS(void) const
 {
 	return mUpdateTPS;
 }
@@ -431,10 +164,302 @@ LONG CChattingServer::GetUpdateTPS(void) const
 
 void CChattingServer::InitializeUpdateTPS(void)
 {
-	InterlockedExchange(&mUpdateTPS, 0);
+	mUpdateTPS = 0;
 
 	return;
 }
+
+
+unsigned CChattingServer::ExecuteUpdateThread(void* pParam)
+{
+	CChattingServer* pChattingServer = (CChattingServer*)pParam;
+
+	pChattingServer->UpdateThread();
+
+	return 1;
+}
+
+unsigned CChattingServer::ExecuteAuthenticThread(void* pParam)
+{
+	CChattingServer* pChattingServer = (CChattingServer*)pParam;
+
+	pChattingServer->AuthenticThread();
+
+	return 1;
+}
+
+void CChattingServer::UpdateThread(void)
+{
+	CJob* pJob = nullptr;
+
+	while (mbUpdateLoopFlag == true)
+	{
+		if (mJobQueue.Dequeue(&pJob) == false)
+		{
+			if (WaitForSingleObject(mUpdateEvent, INFINITE) != WAIT_OBJECT_0)
+			{
+				CSystemLog::GetInstance()->Log(true, CSystemLog::eLogLevel::LogLevelError, L"ChattingServer", L"WaitSingForObject Error : %d", GetLastError());
+
+				CCrashDump::Crash();
+			}
+
+			continue;
+		}
+
+		jobProcedure(pJob);
+
+		pJob->Free();
+
+		InterlockedIncrement(&mUpdateTPS);
+	}
+
+	return;
+}
+
+
+void CChattingServer::AuthenticThread(void)
+{
+	mRedisConnector.Connect();
+
+	for (;;)
+	{
+		int useSize = mAuthenticJobQueue.GetUseSize();
+		if (useSize == 0)
+		{
+			if (WaitForSingleObject(mAuthenticEvent, INFINITE) != WAIT_OBJECT_0)
+				CCrashDump::Crash();
+
+			continue;
+		}
+
+		CJob* pAuthenticJob;
+
+		for (int cnt = 0; cnt < useSize; ++cnt)
+		{
+			mAuthenticJobQueue.Dequeue(&pAuthenticJob);
+
+			pAuthenticJob->mJobType = CJob::eJobType::LOGIN_JOB;
+
+			// 더미 계정은 토큰 인증을 하지 않는다.
+			if (pAuthenticJob->mAccountNumber > 999999)
+			{
+				if (mRedisConnector.CompareToken(pAuthenticJob->mAccountNumber, pAuthenticJob->mSessionKey, 64) == true)
+					pAuthenticJob->mLoginResult = true;
+				else
+					pAuthenticJob->mLoginResult = false;
+			}
+			else
+				pAuthenticJob->mLoginResult = true;
+
+			mJobQueue.Enqueue(pAuthenticJob);
+
+			SetEvent(mUpdateEvent);
+		}
+	}
+
+	mRedisConnector.Disconnect();
+
+	return;
+}
+
+
+
+bool CChattingServer::setupUpdateThread(void)
+{
+	mUpdateThreadHandle = (HANDLE)_beginthreadex(NULL, 0, (_beginthreadex_proc_type)ExecuteUpdateThread, this, NULL, (UINT*)mUpdateThreadID);
+	if (mUpdateThreadHandle == INVALID_HANDLE_VALUE)
+	{
+		CSystemLog::GetInstance()->Log(true, CSystemLog::eLogLevel::LogLevelError, L"ChattingServer", L"[setupUpdateThread] _beginthreadex Error : %d", GetLastError());
+
+		return false;
+	}
+
+	return true;
+}
+
+
+
+bool CChattingServer::setupAuthenticThread(void)
+{
+	mAuthenticThreadHandle = (HANDLE)_beginthreadex(NULL, 0, (_beginthreadex_proc_type)ExecuteAuthenticThread, this, NULL, (UINT*)mAuthenticThreadID);
+	if (mAuthenticThreadHandle == INVALID_HANDLE_VALUE)
+	{
+		CSystemLog::GetInstance()->Log(true, CSystemLog::eLogLevel::LogLevelError, L"ChattingServer", L"[setupAuthenticThread] _beginthreadex Error : %d", GetLastError());
+
+		return false;
+	}
+
+	return true;
+}
+
+
+void CChattingServer::closeWaitUpdateThread(void)
+{
+	if (mUpdateThreadHandle == INVALID_HANDLE_VALUE)
+		return;
+
+	// Update 스레드 시그널을 기다림
+	if (WaitForSingleObject(mUpdateThreadHandle, INFINITE) != WAIT_OBJECT_0)
+	{
+		CSystemLog::GetInstance()->Log(true, CSystemLog::eLogLevel::LogLevelError, L"ChattingServer", L"[closeWaitUpdateThread] WaitForSingleObject Error : %d", GetLastError());
+
+		CCrashDump::Crash();
+	}
+
+	// 스레드 핸들 반환
+	CloseHandle(mUpdateThreadHandle);
+
+	mUpdateThreadHandle = INVALID_HANDLE_VALUE;
+
+	return;
+}
+
+void CChattingServer::closeWaitAuthenticThread(void)
+{
+	if (mAuthenticThreadHandle == INVALID_HANDLE_VALUE)
+		return;
+
+	// Authentic 스레드 시그널을 기다림 
+	if (WaitForSingleObject(mAuthenticThreadHandle, INFINITE) != WAIT_OBJECT_0)
+	{
+		CSystemLog::GetInstance()->Log(true, CSystemLog::eLogLevel::LogLevelError, L"ChattingServer", L"[closeWaitAuthenticThread] WaitForSingleObject Error : %d", GetLastError());
+
+		CCrashDump::Crash();
+	}
+
+	CloseHandle(mAuthenticThreadHandle);
+
+	mAuthenticThreadHandle = INVALID_HANDLE_VALUE;
+
+	return;
+}
+
+
+
+
+
+
+bool CChattingServer::insertAccountNoMap(unsigned long long sessionID, unsigned long long accountNo)
+{
+	return mAccountNoMap.insert(std::make_pair(sessionID, accountNo)).second;
+}
+
+bool CChattingServer::eraseAccountNoMap(unsigned long long sessionID)
+{
+	return mAccountNoMap.erase(sessionID);
+}
+
+bool CChattingServer::findAccountNoFromAccountMap(unsigned long long sessionID, unsigned long long* pAccountNo)
+{
+	auto iter = mAccountNoMap.find(sessionID);
+	if (iter == mAccountNoMap.end())
+		return false;
+
+	*pAccountNo = iter->second;
+
+	return true;
+}
+
+
+
+bool CChattingServer::insertPlayerMap(unsigned long long accountNo, CPlayer* pPlayer)
+{
+	return mPlayerMap.insert(std::make_pair(accountNo,pPlayer)).second;
+}
+
+
+bool CChattingServer::erasePlayerMap(unsigned long long accountNo)
+{
+	return mPlayerMap.erase(accountNo);
+}
+
+CPlayer* CChattingServer::findPlayerFromPlayerMap(unsigned long long accountNo) const
+{	
+	auto iter = mPlayerMap.find(accountNo);
+	if (iter == mPlayerMap.end())
+		return nullptr;
+
+	return iter->second;
+}
+
+
+
+bool CChattingServer::insertPlayerSectorMap(int sectorPosX, int sectorPosY, unsigned long long accountNo, CPlayer* pPlayer)
+{
+	if (sectorPosX < 0 || sectorPosX >= chattingserver::SECTOR_MAX_WIDTH || sectorPosY < 0 || sectorPosY >= chattingserver::SECTOR_MAX_HEIGHT)
+		return false;
+
+	return mPlayerSectorMap[sectorPosY][sectorPosX].insert(std::make_pair(accountNo, pPlayer)).second;
+}
+
+bool CChattingServer::erasePlayerSectorMap(int sectorPosX, int sectorPosY, unsigned long long accountNo)
+{
+	if (sectorPosX < 0 || sectorPosX >= chattingserver::SECTOR_MAX_WIDTH || sectorPosY < 0 || sectorPosY >= chattingserver::SECTOR_MAX_HEIGHT)
+		return false;
+
+	return mPlayerSectorMap[sectorPosY][sectorPosX].erase(accountNo);
+}
+
+
+void CChattingServer::removeSector(CPlayer* pPlayer)
+{
+	// 아직 자리 셋팅 전이라면은 return
+	if (pPlayer->mbSectorSetFlag == false)
+	{
+		// 자리셋팅 Flag를 true로 변경해준다.
+		pPlayer->mbSectorSetFlag = true;
+
+		return;
+	}
+
+	erasePlayerSectorMap(pPlayer->mSectorX, pPlayer->mSectorY, pPlayer->mAccountNumber);
+
+	return;
+}
+
+
+bool CChattingServer::createPlayer(unsigned long long accountNumber, unsigned long long sessionID, CPlayer** pPlayer)
+{
+	CPlayer* pDuplicatePlayer = findPlayerFromPlayerMap(accountNumber);
+	if (pDuplicatePlayer != nullptr)
+	{
+		// 세션 끊기
+		Disconnect(pDuplicatePlayer->mSessionID);
+
+		return false;
+	}
+
+	*pPlayer = CPlayer::Alloc();
+
+	(*pPlayer)->mAccountNumber = accountNumber;
+
+	(*pPlayer)->mSessionID = sessionID;
+
+	return true;
+}
+
+bool CChattingServer::deletePlayer(unsigned long long accountNumber, unsigned long long sessionID)
+{
+	CPlayer* pPlayer = findPlayerFromPlayerMap(accountNumber);
+	if (pPlayer == nullptr)
+		return false;
+
+	removeSector(pPlayer);
+
+	erasePlayerMap(accountNumber);
+
+	pPlayer->Free();
+
+	--mPlayerCount;
+
+	return true;
+}
+
+
+
+
+
+
 
 void CChattingServer::jobProcedure(CJob* pJob)
 {
@@ -442,34 +467,34 @@ void CChattingServer::jobProcedure(CJob* pJob)
 	{
 	case CJob::eJobType::CLIENT_JOIN_JOB:
 
-		jobProcedureClientJoin(pJob->mSessionID);
+		clientJoinJobRequest(pJob->mSessionID);
 
 		return;
 	case CJob::eJobType::LOGIN_JOB:
 		
-		jobProcedureLoginResponse(pJob->mSessionID, pJob);
+		loginJobRequest(pJob->mSessionID, pJob);
 
 		return;
 	case CJob::eJobType::MESSAGE_JOB:
 
-		jobProcedureMessage(pJob->mSessionID, pJob->mpMessage);
+		messageJobRequest(pJob->mSessionID, pJob->mpMessage);
 
 		return;
 	case CJob::eJobType::CLIENT_LEAVE_JOB:
 		
-		jobProcedureClientLeave(pJob->mSessionID);
+		clientLeaveJobRequest(pJob->mSessionID);
 
 		return;
 
 	case CJob::eJobType::SERVER_STOP_JOB:
 
-		jobProcedureServerStop();
+		serverStopJobRequest();
 
 		return;
 
 	default:
 
-		CSystemLog::GetInstance()->Log(TRUE, CSystemLog::eLogLevel::LogLevelError, L"ChattingServer", L"[jobProcedure] jobType : %d", pJob->mJobType);
+		CSystemLog::GetInstance()->Log(true, CSystemLog::eLogLevel::LogLevelError, L"ChattingServer", L"[jobProcedure] jobType : %d", pJob->mJobType);
 
 		CCrashDump::Crash();
 
@@ -479,24 +504,148 @@ void CChattingServer::jobProcedure(CJob* pJob)
 	return;
 }
 
-void CChattingServer::jobProcedureMessage(UINT64 sessionID, CMessage* pMessage)
+void CChattingServer::clientJoinJobRequest(unsigned long long sessionID)
 {
-	WORD messageType;
+	return;
+}
+
+void CChattingServer::loginJobRequest(unsigned long long sessionID, CJob* pJob)
+{
+	// 해당 세션의 연결 끊김 여부를 확인한다.
+	if (GetConnectionState(sessionID) == true)
+		return;
+
+	CPlayer* pPlayer;
+
+
+	// 인증 실패
+	if (pJob->mLoginResult == false)
+	{
+		sendLoginResponse(false, pJob->mAccountNumber, sessionID);
+		Disconnect(pJob->mSessionID);
+	}
+	else if (createPlayer(pJob->mAccountNumber, sessionID, &pPlayer) == true)
+	{
+		wcscpy_s(pPlayer->mPlayerID, pJob->mPlayerID);
+
+		wcscpy_s(pPlayer->mPlayerNickName, pJob->mPlayerNickName);
+
+		// sessionID, accountNo 맵핑
+		if (insertAccountNoMap(sessionID, pJob->mAccountNumber) == false)
+			CCrashDump::Crash();
+
+		if (insertPlayerMap(pPlayer->mAccountNumber, pPlayer) == false)
+			CCrashDump::Crash();
+
+		++mPlayerCount;
+
+		sendLoginResponse(pJob->mLoginResult, pJob->mAccountNumber, sessionID);
+	}
+	else
+	{
+		sendLoginResponse(false, pJob->mAccountNumber, sessionID);
+
+		// 중복 로그인으론 기존 플레이어와 현재 플레이어를 끊는다.
+		Disconnect(pPlayer->mSessionID);
+		Disconnect(pJob->mSessionID);
+	}
+
+	return;
+}
+
+
+void CChattingServer::messageJobRequest(unsigned long long sessionID, CMessage* pMessage)
+{
+	unsigned short messageType;
 
 	*pMessage >> messageType;
 
-	if (recvProcedure(sessionID, messageType, pMessage) == FALSE)
-	{
+	if (messageProcedure(sessionID, messageType, pMessage) == false)
 		Disconnect(sessionID);
-	}
 
 	pMessage->Free();
 	
 	return;
 }
 
+void CChattingServer::clientLeaveJobRequest(unsigned long long sessionID)
+{
+	unsigned long long accountNo;
 
-CJob* CChattingServer::createJob(UINT64 sessionID, CJob::eJobType jobType, CMessage* pMessage)
+	if (findAccountNoFromAccountMap(sessionID, &accountNo) == true)
+		deletePlayer(accountNo, sessionID);
+
+	if (mbStopFlag == true && mPlayerMap.empty() == true)
+		mbUpdateLoopFlag = false;
+
+	return;
+}
+
+void CChattingServer::serverStopJobRequest(void)
+{
+	mbStopFlag = true;
+
+	if (mPlayerMap.empty() == true)
+		mbUpdateLoopFlag = false;
+
+	return;
+}
+
+
+
+
+// Sector 음수 계산을 위해서 인자는 short를 받는다.
+void CChattingServer::getSectorAround(int posY, int posX, stSectorAround* pSectorAround)
+{	
+	posY -= 1;
+	posX -= 1;
+
+	for (int countY = 0; countY < 3; ++countY)
+	{
+		if (posY + countY < 0 || posY + countY >= chattingserver::SECTOR_MAX_HEIGHT)
+			continue;
+
+		for (int countX = 0; countX < 3; ++countX)
+		{
+			if (posX + countX < 0 || posX + countX >= chattingserver::SECTOR_MAX_WIDTH)
+				continue;
+
+			pSectorAround->aroundSector[pSectorAround->count].posY = posY + countY;
+			pSectorAround->aroundSector[pSectorAround->count].posX = posX + countX;
+
+			++pSectorAround->count;
+		}
+	}
+
+	return;
+}
+
+
+void CChattingServer::sendOneSector(stSector* pSector, CMessage* pMessage)
+{
+	if (pSector->posX < 0 || pSector->posX >= chattingserver::SECTOR_MAX_WIDTH || pSector->posY < 0 || pSector->posY >= chattingserver::SECTOR_MAX_HEIGHT)
+		return;
+
+	// 범위기반 for문을 사용한다.
+	for (const auto &iter : mPlayerSectorMap[pSector->posY][pSector->posX])
+		SendPacket(iter.second->mSessionID, pMessage);
+
+	return;
+}
+
+void CChattingServer::sendAroundSector(stSectorAround* pSectorAround, CMessage* pMessage)
+{
+	stSector* pSectorArray = pSectorAround->aroundSector;
+
+	int count = pSectorAround->count;
+	for (int index = 0; index < count; ++index)
+		sendOneSector(&pSectorArray[index], pMessage);
+
+	return;
+}
+
+
+CJob* CChattingServer::createJob(unsigned long long sessionID, CJob::eJobType jobType, CMessage* pMessage)
 {
 	CJob* pJob = CJob::Alloc();
 
@@ -509,298 +658,95 @@ CJob* CChattingServer::createJob(UINT64 sessionID, CJob::eJobType jobType, CMess
 	return pJob;
 }
 
-
-//
-//
-//CPlayer* CChattingServer::findPlayer(UINT64 sessionID)
-//{
-//	auto iter = mPlayerMap.find(sessionID);
-//
-//	if (iter == mPlayerMap.end())
-//	{
-//		return nullptr;
-//	}
-//
-//	return iter->second;
-//}
-
-CChattingServer::CConnectionState* CChattingServer::findConnectionState(UINT64 sessionID)
+// 메시지 프로토콜 
+bool CChattingServer::messageProcedure(unsigned long long sessionID, unsigned short messageType, CMessage* pMessage)
 {
-	auto iter = mConnectionStateMap.find(sessionID);
-
-	if (iter == mConnectionStateMap.end())
+	switch (messageType)
 	{
-		return nullptr;
+		// 로그인 요청 메시지
+	case en_PACKET_CS_CHAT_REQ_LOGIN:
+
+		return loginRequest(sessionID, pMessage);
+
+		// 섹터 이동 메시지
+	case en_PACKET_CS_CHAT_REQ_SECTOR_MOVE:
+
+		return sectorMoveRequest(sessionID, pMessage);
+
+		// 채팅 메시지
+	case en_PACKET_CS_CHAT_REQ_MESSAGE:
+
+		return chatRequest(sessionID, pMessage);
+
+		// 하트비트 메시지 ( 현재 사용 X )
+	case en_PACKET_CS_CHAT_REQ_HEARTBEAT:
+
+		return heartbeatRequest(sessionID);
+
+	default:
+
+		// 공격 확인		
+		return false;
 	}
-	
-	return iter->second;
+
+	return true;
 }
 
 
-void CChattingServer::createPlayer(UINT64 accountNumber, UINT64 sessionID, CPlayer** pPlayer)
-{
-	CPlayer *pDuplicatePlayer = findPlayerFromPlayerMap(accountNumber);
-	if (pDuplicatePlayer != nullptr)
-	{
-		// 세션 끊기
-		Disconnect(pDuplicatePlayer->mSessionID);
-
-		if (pDuplicatePlayer->mbSectorSetFlag == TRUE)
-		{
-			// 섹터에서 제거
-			erasePlayerSectorMap(pDuplicatePlayer->mSectorX, pDuplicatePlayer->mSectorY, accountNumber);
-		}
-
-		// 플레이어 맵에서 제거
-		erasePlayerMap(accountNumber);
-	}
-
-	*pPlayer = CPlayer::Alloc();
-
-	(*pPlayer)->mAccountNumber = accountNumber;
-
-	(*pPlayer)->mSessionID = sessionID;
-
-	return;
-}
-
-void CChattingServer::deletePlayer(UINT64 accountNumber, UINT64 sessionID)
-{
-	CPlayer* pPlayer = findPlayerFromPlayerMap(accountNumber);
-	if (pPlayer == nullptr)
-	{	
-		return;
-	}
-
-	do
-	{
-		if (pPlayer->mSessionID != sessionID)
-		{
-			break;
-		}
-
-		removeSector(pPlayer);
-
-		erasePlayerMap(accountNumber);
-
-	} while (0);
-	
-	--mPlayerCount;
-
-	pPlayer->Free();
-
-	return;
-}
 
 
-void CChattingServer::removeSector(CPlayer* pPlayer)
-{
-	// 아직 자리 셋팅 전이라면은 return
-	if (pPlayer->mbSectorSetFlag == FALSE)
-	{
-		// 자리셋팅 Flag를 TRUE로 변경해준다.
-		pPlayer->mbSectorSetFlag = TRUE;
-
-		return;
-	}
-
-	erasePlayerSectorMap(pPlayer->mSectorX, pPlayer->mSectorY, pPlayer->mAccountNumber);
-
-	return;
-}
-
-
-// Sector 음수 계산을 위해서 인자는 short를 받는다.
-void CChattingServer::getSectorAround(INT posY, INT posX, stSectorAround* pSectorAround)
-{	
-	posY -= 1;
-	posX -= 1;
-
-	for (INT countY = 0; countY < 3; ++countY)
-	{
-		if (posY + countY < 0 || posY + countY >= chattingserver::SECTOR_MAX_HEIGHT)
-		{
-			continue;
-		}
-
-		for (INT countX = 0; countX < 3; ++countX)
-		{
-			if (posX + countX < 0 || posX + countX >= chattingserver::SECTOR_MAX_WIDTH)
-			{
-				continue;
-			}
-
-			pSectorAround->aroundSector[pSectorAround->count].posY = posY + countY;
-			pSectorAround->aroundSector[pSectorAround->count].posX = posX + countX;
-
-			++pSectorAround->count;
-		}
-	}
-}
-
-
-void CChattingServer::sendOneSector(stSector* pSector, CMessage* pMessage)
-{
-	std::unordered_map<UINT64, CPlayer*>* pPlayerMap = &mSectorArray[pSector->posY][pSector->posX];
-
-	// 범위기반 for문을 사용한다.
-	for (auto& iter : *pPlayerMap)
-	{
-		//++gSendPacketAround;
-		SendPacket(iter.second->mSessionID, pMessage);
-	}
-
-	return;
-}
-
-void CChattingServer::sendAroundSector(stSectorAround* pSectorAround, CMessage* pMessage)
-{
-	//CPerformanceProfiler profiler(L"sendAroundSector");
-
-	stSector* pSectorArray = pSectorAround->aroundSector;
-
-	INT count = pSectorAround->count;
-
-	for (INT index = 0; index < count; ++index)
-	{		
-		sendOneSector(&pSectorArray[index], pMessage);
-	}
-}
-
-BOOL CChattingServer::recvProcedureLoginRequest(UINT64 sessionID, CMessage* pMessage)
-{		
-	CConnectionState* pConnectionState = findConnectionState(sessionID);
-	
-	// 로그인 처리에 돌입하였기 때문에 TRUE 로 변경한다.
-	pConnectionState->mbLoginProcFlag = TRUE;
-
-	CJob* pAuthenticJob =CJob::Alloc();
+bool CChattingServer::loginRequest(unsigned long long sessionID, CMessage* pMessage)
+{			
+	CJob* pAuthenticJob = CJob::Alloc();
 
 	pAuthenticJob->mSessionID = sessionID;
 
-	*pMessage >> pConnectionState->mAccountNo;
+	*pMessage >> pAuthenticJob->mAccountNumber;
 
-	pAuthenticJob->mAccountNumber = pConnectionState->mAccountNo;
+	pMessage->GetPayload((char*)pAuthenticJob->mPlayerID, player::PLAYER_STRING_LENGTH * sizeof(wchar_t));
 
-	pMessage->GetPayload((CHAR*)pAuthenticJob->mPlayerID, player::PLAYER_STRING_LENGTH * sizeof(WCHAR));
+	pMessage->MoveReadPos(player::PLAYER_STRING_LENGTH * sizeof(wchar_t));
 
-	pMessage->MoveReadPos(player::PLAYER_STRING_LENGTH * sizeof(WCHAR));
+	pMessage->GetPayload((char*)pAuthenticJob->mPlayerNickName, player::PLAYER_STRING_LENGTH * sizeof(wchar_t));
 
-	pMessage->GetPayload((CHAR*)pAuthenticJob->mPlayerNickName, player::PLAYER_STRING_LENGTH * sizeof(WCHAR));
+	pMessage->MoveReadPos(player::PLAYER_STRING_LENGTH * sizeof(wchar_t));
 
-	pMessage->MoveReadPos(player::PLAYER_STRING_LENGTH * sizeof(WCHAR));
-
-	pMessage->GetPayload((CHAR*)pAuthenticJob->mSessionKey, 64);
+	pMessage->GetPayload((char*)pAuthenticJob->mSessionKey, 64);
 
 	pMessage->MoveReadPos(64);
 
-	if (mAuthenticJobQueue.Enqueue(&pAuthenticJob) == FALSE)
+	if (mAuthenticJobQueue.Enqueue(pAuthenticJob) == false)
 	{
 		pMessage->Free();
 
-		return FALSE;
+		return false;
 	}
 
 	SetEvent(mAuthenticEvent);
 
-	return TRUE;
+	return true;
 }
 
-
-void CChattingServer::jobProcedureLoginResponse(UINT64 sessionID, CJob* pJob)
+bool CChattingServer::sectorMoveRequest(unsigned long long sessionID, CMessage* pMessage)
 {
-	CConnectionState* pConnectionState = findConnectionState(sessionID);
-
-	// OnClientLeave가 호출되었으니 erase로 CConnectionState를 정리해준다.
-	if (pConnectionState->mbConnectionFlag == FALSE)
-	{
-		mConnectionStateMap.erase(sessionID);
-	
-		pConnectionState->Free();
-
-		return;
-	}
-
-	// 로그인 처리가 끝났다면 FALSE로 변경한다.
-	pConnectionState->mbLoginProcFlag = FALSE;
-
-	CPlayer* pPlayer;
-
-	createPlayer(pJob->mAccountNumber, sessionID, &pPlayer);
-
-	wcscpy_s(pPlayer->mPlayerID, pJob->mPlayerID);
-
-	wcscpy_s(pPlayer->mPlayerNickName, pJob->mPlayerNickName);
-
-	if (insertPlayerMap(pPlayer->mAccountNumber, pPlayer) == FALSE)
-	{
-		CCrashDump::Crash();
-	}
-
-	++mPlayerCount;
-
-	sendLoginResponse(pJob->mLoginResult, pPlayer);
-
-	mpLanLoginClient->NotificationClientLoginSuccess(pJob->mAccountNumber);
-
-	return;
-}
-
-
-void CChattingServer::sendLoginResponse(bool bLoginFlag, CPlayer *pPlayer)
-{
-	CMessage* pMessage = CMessage::Alloc();
-
-	// 로그인 완료 메시지를 만든다.
-	packingLoginMessage(bLoginFlag, pPlayer->mAccountNumber, pMessage);
-
-	// 로그인 완료 메시지를 응답한다.
-	SendPacket(pPlayer->mSessionID, pMessage);
-
-	pMessage->Free();
-
-	return;
-}
-
-
-
-
-void CChattingServer::packingLoginMessage(bool bLoginFlag, UINT64 accountNumber, CMessage* pMessage)
-{
-	*pMessage << (WORD)en_PACKET_CS_CHAT_RES_LOGIN << bLoginFlag << accountNumber;
-
-	return;
-}
-
-
-// 섹터 이동 
-BOOL CChattingServer::recvProcedureSectorMoveRequest(UINT64 sessionID, CMessage* pMessage)
-{
-	UINT64 accountNumber;
-	WORD sectorX;
-	WORD sectorY;
+	unsigned long long accountNumber;
+	unsigned short sectorX;
+	unsigned short sectorY;
 
 	*pMessage >> accountNumber >> sectorX >> sectorY;
 
-	
 	// 로그인하지 않았는데 섹터 이동요청을 보내면은 끊는다.
 	CPlayer* pPlayer = findPlayerFromPlayerMap(accountNumber);
 	if (pPlayer == nullptr)
-	{	
-		return FALSE;
-	}
+		return false;
 
-	// 어카운트 넘버가 일치하는지 확인한다. 일치하지 않다면은 return FALSE
-	//if (pPlayer->mAccountNumber != accountNumber)
-	//{
-	//	return FALSE;
-	//}
+	// 어카운트 넘버가 일치하는지 확인한다. 일치하지 않다면은 return false
+	if (pPlayer->mAccountNumber != accountNumber)
+		return false;
 
 	// unsigned 이기 때문에 SECTOR_MAX_WIDTH, SECTOR_MAX_HEIGHT 보다 큰지만 확인하면 된다.  
-	//if (sectorX > SECTOR_MAX_WIDTH || sectorY > SECTOR_MAX_HEIGHT)
-	//{
-	//	return FALSE;
-	//}
+	if (sectorX > chattingserver::SECTOR_MAX_WIDTH || sectorY > chattingserver::SECTOR_MAX_HEIGHT)
+		return false;
 
 	removeSector(pPlayer);
 
@@ -809,17 +755,75 @@ BOOL CChattingServer::recvProcedureSectorMoveRequest(UINT64 sessionID, CMessage*
 
 	insertPlayerSectorMap(pPlayer->mSectorX, pPlayer->mSectorY, pPlayer->mAccountNumber, pPlayer);
 
-	sendSectorMoveResponse(pPlayer);	
+	sendSectorMoveResponse(pPlayer);
 
-	return TRUE;
+	return true;
 }
+
+
+bool CChattingServer::chatRequest(unsigned long long sessionID, CMessage* pMessage)
+{
+
+	unsigned long long accountNumber;
+
+	unsigned short chatLength;
+
+	*pMessage >> accountNumber >> chatLength;
+
+	// 아직 로그인하지 않았다면은 return false;
+	CPlayer* pPlayer = findPlayerFromPlayerMap(accountNumber);
+	if (pPlayer == nullptr)
+		return false;
+
+	// 공격 확인
+	// 어카운트 넘버가 일치하지 않으면은 return false;
+	if (pPlayer->mAccountNumber != accountNumber)
+		return false;
+
+	// 아직 섹터 셋팅을 하지 않았다면은 return false
+	if (pPlayer->mbSectorSetFlag == false)
+		return false;
+
+	wchar_t pChat[chattingserver::MAX_CHAT_LENGTH];
+
+	pMessage->GetPayload((char*)pChat, chatLength);
+
+	pMessage->MoveReadPos(chatLength);
+
+	sendChatResponse(chatLength, pChat, pPlayer);
+
+	return true;
+}
+
+bool CChattingServer::heartbeatRequest(unsigned long long sessionID)
+{
+	return true;
+}
+
+
+void CChattingServer::sendLoginResponse(bool bLoginFlag, unsigned long long accountNo, unsigned long long sessionID)
+{
+	CMessage* pMessage = CMessage::Alloc();
+
+	// 로그인 완료 메시지를 만든다.
+	chattingserver::packingLoginReponse(bLoginFlag, accountNo, pMessage);
+
+	// 로그인 완료 메시지를 응답한다.
+	SendPacket(sessionID, pMessage);
+
+	pMessage->Free();
+
+	return;
+}
+
+
 
 // 섹터 이동 결과 송신
 void CChattingServer::sendSectorMoveResponse(CPlayer* pPlayer)
 {
 	CMessage* pMessage = CMessage::Alloc();
 
-	packingSectorMoveMessage(pPlayer->mAccountNumber, pPlayer->mSectorX, pPlayer->mSectorY, pMessage);
+	chattingserver::packingSectorMoveResponse(pPlayer->mAccountNumber, pPlayer->mSectorX, pPlayer->mSectorY, pMessage);
 	
 	SendPacket(pPlayer->mSessionID, pMessage);	
 
@@ -828,60 +832,14 @@ void CChattingServer::sendSectorMoveResponse(CPlayer* pPlayer)
 	return;
 }
 
-void CChattingServer::packingSectorMoveMessage(UINT64 accountNumber, WORD sectorX, WORD sectorY, CMessage* pMessage)
-{
-	*pMessage << (WORD)en_PACKET_CS_CHAT_RES_SECTOR_MOVE << accountNumber << sectorX << sectorY;
-
-	return;
-}
 
 
 // 채팅 메시지 요청
-BOOL CChattingServer::recvProcedureChatRequest(UINT64 sessionID, CMessage* pMessage)
-{
-
-	UINT64 accountNumber;
-
-	WORD chatLength;
-
-	*pMessage >> accountNumber >> chatLength;
-
-	// 아직 로그인하지 않았다면은 return FALSE;
-	CPlayer* pPlayer = findPlayerFromPlayerMap(accountNumber);
-	if (pPlayer == nullptr)
-	{
-		return FALSE;
-	}
-
-	// 공격 확인
-	// 어카운트 넘버가 일치하지 않으면은 return FALSE;
-	if (pPlayer->mAccountNumber != accountNumber)
-	{
-		return FALSE;
-	}
-
-	// 아직 섹터 셋팅을 하지 않았다면은 return FALSE
-	if (pPlayer->mbSectorSetFlag == FALSE)
-	{
-		return FALSE;
-	}
-
-	WCHAR pChat[chattingserver::MAX_CHAT_LENGTH];
-
-	pMessage->GetPayload((CHAR*)pChat, chatLength);
-
-	pMessage->MoveReadPos(chatLength);
-
-	sendChatResponse(chatLength, pChat, pPlayer);
-
-	return TRUE;
-}
-
-void CChattingServer::sendChatResponse(WORD chatLength, WCHAR* pChat, CPlayer* pPlayer)
+void CChattingServer::sendChatResponse(unsigned short chatLength, wchar_t* pChat, CPlayer* pPlayer)
 {
 	CMessage* pMessage = CMessage::Alloc();
 
-	packingChatMessage(pPlayer->mAccountNumber, pPlayer->mPlayerID, sizeof(WCHAR) * player::PLAYER_STRING_LENGTH, pPlayer->mPlayerNickName, sizeof(WCHAR) * player::PLAYER_STRING_LENGTH, chatLength, pChat, pMessage);
+	chattingserver::packingChatResponse(pPlayer->mAccountNumber, pPlayer->mPlayerID, sizeof(wchar_t) * player::PLAYER_STRING_LENGTH, pPlayer->mPlayerNickName, sizeof(wchar_t) * player::PLAYER_STRING_LENGTH, chatLength, pChat, pMessage);
 
 	// 채팅 송신자 주변 섹터로 메시지를 뿌린다.
 	sendAroundSector(&mSectorAround[pPlayer->mSectorY][pPlayer->mSectorX], pMessage);
@@ -892,127 +850,41 @@ void CChattingServer::sendChatResponse(WORD chatLength, WCHAR* pChat, CPlayer* p
 }
 
 
-void CChattingServer::packingChatMessage(UINT64 accountNumber, WCHAR* pPlayerID, DWORD cbPlayerID, WCHAR* pPlayerNickName, DWORD cbPlayerNickName, WORD chatLength, WCHAR* pChat, CMessage* pMessage)
+
+void chattingserver::packingLoginReponse(bool bLoginFlag, unsigned long long accountNumber, CMessage* pMessage)
 {
-	*pMessage << (WORD)en_PACKET_CS_CHAT_RES_MESSAGE << accountNumber;
-	
-	pMessage->PutPayload((CHAR*)pPlayerID, cbPlayerID);
+	*pMessage << (unsigned short)en_PACKET_CS_CHAT_RES_LOGIN << bLoginFlag << accountNumber;
+
+	return;
+}
+
+void chattingserver::packingSectorMoveResponse(unsigned long long accountNumber, unsigned short sectorX, unsigned short sectorY, CMessage* pMessage)
+{
+	*pMessage << (unsigned short)en_PACKET_CS_CHAT_RES_SECTOR_MOVE << accountNumber << sectorX << sectorY;
+
+	return;
+}
+
+void chattingserver::packingChatResponse(unsigned long long accountNumber, wchar_t* pPlayerID, unsigned int cbPlayerID, wchar_t* pPlayerNickName, unsigned int cbPlayerNickName, unsigned short chatLength, wchar_t* pChat, CMessage* pMessage)
+{
+	*pMessage << (unsigned short)en_PACKET_CS_CHAT_RES_MESSAGE << accountNumber;
+
+	pMessage->PutPayload((char*)pPlayerID, cbPlayerID);
 
 	pMessage->MoveWritePos(cbPlayerID);
 
-	pMessage->PutPayload((CHAR*)pPlayerNickName, cbPlayerNickName);
+	pMessage->PutPayload((char*)pPlayerNickName, cbPlayerNickName);
 
 	pMessage->MoveWritePos(cbPlayerNickName);
 
 	*pMessage << chatLength;
 
-	pMessage->PutPayload((CHAR*)pChat, chatLength);
+	pMessage->PutPayload((char*)pChat, chatLength);
 
 	pMessage->MoveWritePos(chatLength);
 
 	return;
 }
 
-BOOL CChattingServer::recvProcedureHeartbeatRequest(UINT64 sessionID)
-{
-	CConnectionState* pConnectionState = findConnectionState(sessionID);
-	if (pConnectionState == nullptr)
-	{
-		return FALSE;
-	}
 
-	//pConnectionState->mTimeout = timeGetTime();
-
-	return TRUE;
-}
-
-void CChattingServer::jobProcedureClientJoin(UINT64 sessionID)
-{
-	CConnectionState* pConnectionState = CConnectionState::Alloc();
-
-	mConnectionStateMap.insert(std::make_pair(sessionID, pConnectionState));
-
-	return;
-}
-
-
-
-
-void CChattingServer::jobProcedureClientLeave(UINT64 sessionID)
-{
-	CConnectionState* pConnectionState = findConnectionState(sessionID);
-
-	// 로그인 처리중이기 때문에 플레이어 삭제없이 return 한다.
-	if (pConnectionState->mbLoginProcFlag == TRUE)
-	{
-		// 로그인 response 에서 mbConnectionFlag 가 FALSE 인 것을 확인 후 정리한다.
-		pConnectionState->mbConnectionFlag = FALSE;
-
-		return;
-	}
-	else
-	{
-		mConnectionStateMap.erase(sessionID);
-
-		pConnectionState->Free();
-	}
-
-	deletePlayer(pConnectionState->mAccountNo, sessionID);
-
-	if (mbStopFlag == TRUE)
-	{
-		if (mPlayerMap.empty() == TRUE)
-		{
-			mbUpdateLoopFlag = FALSE;
-		}
-	}
-
-	return;
-}
-
-void CChattingServer::jobProcedureServerStop(void)
-{
-	mbStopFlag = TRUE;
-
-	if (mPlayerMap.empty() == TRUE)
-	{
-		mbUpdateLoopFlag = FALSE;
-	}
-
-	return;
-}
-
-// 메시지 프로토콜 
-BOOL CChattingServer::recvProcedure(UINT64 sessionID, DWORD messageType, CMessage* pMessage)
-{
-	switch (messageType)
-	{
-	// 로그인 요청 메시지
-	case en_PACKET_CS_CHAT_REQ_LOGIN:
-
-		return recvProcedureLoginRequest(sessionID, pMessage);
-
-	// 섹터 이동 메시지
-	case en_PACKET_CS_CHAT_REQ_SECTOR_MOVE:
-
-		return recvProcedureSectorMoveRequest(sessionID, pMessage);
-		
-	// 채팅 메시지
-	case en_PACKET_CS_CHAT_REQ_MESSAGE:
-
-		return recvProcedureChatRequest(sessionID, pMessage);
-
-	// 하트비트 메시지 ( 현재 사용 X )
-	case en_PACKET_CS_CHAT_REQ_HEARTBEAT:
-
-		return recvProcedureHeartbeatRequest(sessionID);
-
-	default:
-		
-		// 공격 확인		
-		return FALSE;
-	}
-
-	return TRUE;
-}
 

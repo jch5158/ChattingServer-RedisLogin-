@@ -18,8 +18,6 @@ public:
 
 	static inline CPlayer* Alloc(void)
 	{
-		//CPerformanceProfiler performance(L"Player Alloc");
-
 		CPlayer* pPlayer = mPlayerFreeList.Alloc();
 
 		pPlayer->Clear();
@@ -29,7 +27,7 @@ public:
 
 	void Free(void)
 	{
-		if (mPlayerFreeList.Free(this) == FALSE)
+		if (mPlayerFreeList.Free(this) == false)
 		{
 			CSystemLog::GetInstance()->Log(TRUE, CSystemLog::eLogLevel::LogLevelError, L"CChattingServer", L"[Free] Player Free is Failed");
 	
@@ -81,7 +79,6 @@ private:
 	{
 	}
 
-	//inline static CLockFreeObjectFreeList<CPlayer> mPlayerFreeList = { 100, FALSE };
 
-	inline static CTLSLockFreeObjectFreeList<CPlayer> mPlayerFreeList = { 0, FALSE };
+	inline static CTLSLockFreeObjectFreeList<CPlayer> mPlayerFreeList;
 };

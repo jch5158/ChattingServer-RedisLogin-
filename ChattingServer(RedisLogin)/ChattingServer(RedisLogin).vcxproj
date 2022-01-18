@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -176,8 +176,10 @@
     <ClCompile Include="..\..\Library\NetworkEngine\LanClientEngine\LanClientEngine\CLanClient.cpp" />
     <ClCompile Include="..\..\Library\NetworkEngine\NetServerEngine\NetServer\CNetServer.cpp" />
     <ClCompile Include="..\..\Library\PerformanceProfiler\PerformanceProfiler\CPerformanceProfiler.cpp" />
+    <ClCompile Include="..\..\Library\PerformanceProfiler\PerformanceProfiler\CTLSPerformanceProfiler.cpp" />
     <ClCompile Include="CChattingServer.cpp" />
     <ClCompile Include="ChattingServer(RedisLogin).cpp" />
+    <ClCompile Include="CJob.cpp" />
     <ClCompile Include="CLanLoginClient.cpp" />
     <ClCompile Include="CLanMonitoringClient.cpp" />
     <ClCompile Include="CPlayer.cpp" />
@@ -201,9 +203,11 @@
     <ClInclude Include="..\..\Library\NetworkEngine\NetServerEngine\NetServer\CNetServer.h" />
     <ClInclude Include="..\..\Library\ParserLibrary\ParserLibrary\CParser.h" />
     <ClInclude Include="..\..\Library\PerformanceProfiler\PerformanceProfiler\CPerformanceProfiler.h" />
+    <ClInclude Include="..\..\Library\PerformanceProfiler\PerformanceProfiler\CTLSPerformanceProfiler.h" />
     <ClInclude Include="..\..\Library\RingBufferLibrary\RingBufferLib\CRingBuffer.h" />
-    <ClInclude Include="..\..\Library\RingBufferLibrary\RingBufferLib\CTemplateRingBuffer.h" />
+    <ClInclude Include="..\..\Library\RingBufferLibrary\RingBufferLib\CTemplateQueue.h" />
     <ClInclude Include="..\..\Library\SystemLogLibrary\SystemLogLibrary\CSystemLog.h" />
+    <ClInclude Include="..\..\Library\TPSProfiler\TPSProfiler\CTPSProfiler.h" />
     <ClInclude Include="..\..\Protocol\GodDamnBug\CommonProtocol.h" />
     <ClInclude Include="CChattingServer.h" />
     <ClInclude Include="CJob.h" />
@@ -211,8 +215,12 @@
     <ClInclude Include="CLanMonitoringClient.h" />
     <ClInclude Include="CPlayer.h" />
     <ClInclude Include="Protocol.h" />
-    <ClInclude Include="ServerControl.h" />
+    <ClInclude Include="resource.h" />
+    <ClInclude Include="ServerController.h" />
     <ClInclude Include="stdafx.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="ChattingServer(RedisLogin).rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -3,257 +3,155 @@
 
 namespace chattingserver
 {
-	constexpr INT SECTOR_MAX_WIDTH = 50;
-	constexpr INT SECTOR_MAX_HEIGHT = 50;
-	constexpr INT MAX_CHAT_LENGTH = 200;
+	constexpr int SECTOR_MAX_WIDTH = 50;
+	constexpr int SECTOR_MAX_HEIGHT = 50;
+	constexpr int MAX_CHAT_LENGTH = 200;
+
+	void packingLoginReponse(bool bLoginFlag, unsigned long long accountNumber, CMessage* pMessage);
+	void packingSectorMoveResponse(unsigned long long accountNumber, unsigned short sectorX, unsigned short sectorY, CMessage* pMessage);
+	void packingChatResponse(unsigned long long accountNumber, wchar_t* pPlayerID, unsigned int cbPlayerID, wchar_t* pPlayerNickName, unsigned int cbPlayerNickName, unsigned short chatLength, wchar_t* pChat, CMessage* pMessage);
 }
 
 class CChattingServer : public CNetServer
 {
-public:
-
-	CChattingServer();
-
-	~CChattingServer();
-
-	DWORD GetJobQueueStatus(void) const;
-
-	DWORD GetPlayerCount(void);
-
-	virtual BOOL OnStart(void) final;
-
-	virtual void OnClientJoin(UINT64 sessionID) final;
-
-	virtual void OnClientLeave(UINT64 sessionID) final;
-
-	virtual void OnStartAcceptThread(void) final;
-
-	virtual void OnStartWorkerThread(void) final;
-
-	virtual void OnRecv(UINT64 sessionID, CMessage* pMessage) final;
-	
-	virtual BOOL OnConnectionRequest(const WCHAR* userIP, WORD userPort) final;
-
-	virtual void OnCloseWorkerThread(void) final;
-
-	virtual void OnCloseAcceptThread(void) final;
-
-	virtual void OnError(DWORD errorCode, const WCHAR* errorMessage) final;
-
-	virtual void OnStop(void) final;
-
-	void SetLoginClient(CLanLoginClient* pLanLoginClient);
-
-	class CConnectionState
-	{
-	private:
-
-		template <class DATA>
-		friend class CLockFreeObjectFreeList;
-
-		template <class DATA>
-		friend class CTLSLockFreeObjectFreeList;
-
-
-		CConnectionState(void)
-			: mbConnectionFlag(TRUE)
-			, mbLoginProcFlag(FALSE)
-			, mAccountNo(0)
-		{
-		}
-
-		~CConnectionState(void)
-		{
-		}
-
-	public:
-
-		static CConnectionState* Alloc(void)
-		{
-			CConnectionState* pConnectionState = mConnectionFreeList.Alloc();
-
-			pConnectionState->Clear();
-
-			return pConnectionState;
-		}
-
-		void Free(void)
-		{
-			if (mConnectionFreeList.Free(this) == FALSE)
-			{
-				CSystemLog::GetInstance()->Log(TRUE, CSystemLog::eLogLevel::LogLevelError, L"ChattingServer", L"Free CConnectionState is Failed");
-
-				CCrashDump::Crash();
-			}
-
-			return;
-		}
-
-		void Clear(void)
-		{
-			mbConnectionFlag = TRUE;
-			mbLoginProcFlag = FALSE;
-			mAccountNo = 0;
-		}
-
-		// 연결되어있는지 확인하는 플래그
-		// 레디스 스레드에서 처리 후 플레이어 생성 전 한 번 더 확인하여 플레이어 생성을 막아주는 플래그
-		BOOL mbConnectionFlag;
-		
-		// 로그인 처리중인지 여부를 확인하는 플래그 레디스 스레드에서 처리중으로 현재 Player가 생성되지 않아 삭제할 수 없음
-		BOOL mbLoginProcFlag;
-
-		UINT64 mAccountNo;
-
-		inline static CTLSLockFreeObjectFreeList<CConnectionState> mConnectionFreeList = { 0,FALSE };
-	};
+private:
 
 	struct stSector
 	{
-		LONG posY;
-		LONG posX;
+		int posY;
+		int posX;
 	};
 
+	// 영향권 섹터
 	struct stSectorAround
 	{
-		DWORD count;
+		int count;
 		stSector aroundSector[9];
 	};
 
-	LONG GetUpdateTPS(void) const;
+public:
 
+	CChattingServer();
+	virtual ~CChattingServer();
+
+	CChattingServer(const CChattingServer&) = delete;
+	CChattingServer& operator=(const CChattingServer&) = delete;
+
+	virtual bool OnStart(void) final;
+	virtual void OnStop(void) final;
+	virtual void OnStartAcceptThread(void) final;
+	virtual void OnStartWorkerThread(void) final;
+	virtual void OnCloseAcceptThread(void) final;
+	virtual void OnCloseWorkerThread(void) final;
+	virtual bool OnConnectionRequest(const wchar_t* userIP, unsigned short userPort) final;
+	virtual void OnClientJoin(unsigned long long sessionID) final;                             // 신규 세션이 접속하였음을 JobQueue에 Job을 던져서 알려준다.
+	virtual void OnClientLeave(unsigned long long sessionID) final;                            // // 세션이 종료하였음을 JobQueue를 통해 알려준다.
+	virtual void OnRecv(unsigned long long sessionID, CMessage* pMessage) final;
+	virtual void OnError(unsigned int errorCode, const wchar_t* errorMessage) final;
+
+	int GetJobQueueStatus(void) const;
+	int GetPlayerCount(void) const;
+
+	long GetUpdateTPS(void) const;
 	void InitializeUpdateTPS(void);
 
 private:
 
-	static DWORD WINAPI ExecuteUpdateThread(void* pParam);
-
-	static DWORD WINAPI ExecuteAuthenticThread(void* pParam);
-
+	// 스레드 생성 관련 함수
+	static unsigned __stdcall ExecuteUpdateThread(void* pParam);
+	static unsigned __stdcall ExecuteAuthenticThread(void* pParam);
 	void UpdateThread(void);
-
 	void AuthenticThread(void);
-
-	BOOL setupUpdateThread(void);
-
-	BOOL setupAuthenticThread(void);
-
+	bool setupUpdateThread(void);
+	bool setupAuthenticThread(void);
 	void closeWaitUpdateThread(void);
-
 	void closeWaitAuthenticThread(void);
 
 
-	BOOL insertPlayerMap(UINT64 accountNo, CPlayer* pPlayer);
-	BOOL erasePlayerMap(UINT64 accountNo);
-	CPlayer* findPlayerFromPlayerMap(UINT64 accountNo);
+	// AccountNoMap
+	bool insertAccountNoMap(unsigned long long sessionID, unsigned long long accountNo);
+	bool eraseAccountNoMap(unsigned long long sessionID);
+	bool findAccountNoFromAccountMap(unsigned long long sessionID, unsigned long long* pAccountNo);
 
 
-	BOOL insertPlayerSectorMap(INT sectorPosX, INT sectorPosY, UINT64 accountNo, CPlayer* pPlayer);
-	BOOL erasePlayerSectorMap(INT sectorPosX, INT sectorPosY, UINT64 accountNo);
-	
+	// PlayerMap 함수
+	bool insertPlayerMap(unsigned long long accountNo, CPlayer* pPlayer);
+	bool erasePlayerMap(unsigned long long accountNo);
+	CPlayer* findPlayerFromPlayerMap(unsigned long long accountNo) const;
 
 
-	CChattingServer::CConnectionState* findConnectionState(UINT64 sessionID);
-
-	void createPlayer(UINT64 acountNumber, UINT64 sessionID, CPlayer **pPlayer);
-
-	void deletePlayer(UINT64 acountNumber, UINT64 sessionID);
-
-	CJob* createJob(UINT64 sessionID, CJob::eJobType jobType, CMessage* pMessage = nullptr);
-
+	// PlayerSectorMap 함수
+	bool insertPlayerSectorMap(int sectorPosX, int sectorPosY, unsigned long long accountNo, CPlayer* pPlayer);
+	bool erasePlayerSectorMap(int sectorPosX, int sectorPosY, unsigned long long accountNo);
 	void removeSector(CPlayer* pPlayer);
 
-	void getSectorAround(INT posY, INT posX, stSectorAround* pSectorAround);
 
+	// Player 생성, 삭제 함수
+	bool createPlayer(unsigned long long acountNumber, unsigned long long sessionID, CPlayer **pPlayer);
+	bool deletePlayer(unsigned long long acountNumber, unsigned long long sessionID);
+
+
+	void getSectorAround(int posY, int posX, stSectorAround* pSectorAround);
+
+	// Sector Send
 	void sendOneSector(stSector* pSector, CMessage* pMessage);
-
 	void sendAroundSector(stSectorAround* pSectorArround, CMessage* pMessage);
 
 
+	CJob* createJob(unsigned long long sessionID, CJob::eJobType jobType, CMessage* pMessage = nullptr);
+
 	// Job 분기문 관련 함수
 	void jobProcedure(CJob* pJob);
-
-	void jobProcedureClientJoin(UINT64 sessionID);
-
-	void jobProcedureLoginResponse(UINT64 sessionID, CJob* pJob);
-
-	void jobProcedureMessage(UINT64 sessionID, CMessage* pMessage);
-
-	void jobProcedureClientLeave(UINT64 sessionID);
-
-	void jobProcedureServerStop(void);
+	void clientJoinJobRequest(unsigned long long sessionID);
+	void loginJobRequest(unsigned long long sessionID, CJob* pJob);
+	void messageJobRequest(unsigned long long sessionID, CMessage* pMessage);
+	void clientLeaveJobRequest(unsigned long long sessionID);
+	void serverStopJobRequest(void);
 
 
-	// recv 메시지 분기문 관련 함수
-	BOOL recvProcedure(UINT64 sessionID, DWORD messageType , CMessage* pMessage);
-
-	BOOL recvProcedureLoginRequest(UINT64 sessionID, CMessage* pMessage);
-
-	BOOL recvProcedureSectorMoveRequest(UINT64 sessionID, CMessage* pMessage);
-
-	BOOL recvProcedureChatRequest(UINT64 sessionID, CMessage* pMessage);
-
-	BOOL recvProcedureHeartbeatRequest(UINT64 sessionID);
+	// 메시지 분기문 관련 함수
+	bool messageProcedure(unsigned long long sessionID, unsigned short messageType , CMessage* pMessage);
+	bool loginRequest(unsigned long long sessionID, CMessage* pMessage);
+	bool sectorMoveRequest(unsigned long long sessionID, CMessage* pMessage);
+	bool chatRequest(unsigned long long sessionID, CMessage* pMessage);
+	bool heartbeatRequest(unsigned long long sessionID);
 
 
 	// 메시지 응답 함수
-	void sendLoginResponse(bool bLoginFlag, CPlayer* pPlayer);
-
+	void sendLoginResponse(bool bLoginFlag, unsigned long long accountNo, unsigned long long sessionID);
 	void sendSectorMoveResponse(CPlayer* pPlayer);
+	void sendChatResponse(unsigned short chatLength, wchar_t* pChat, CPlayer *pPlayer);
 
-	void sendChatResponse(WORD chatLength, WCHAR* pChat, CPlayer *pPlayer);
+	
+	bool mbStopFlag;
+	bool mbUpdateLoopFlag;
 
-
-	// 응답 메시지 생성 함수
-	void packingLoginMessage(bool bLoginFlag, UINT64 accountNumber, CMessage* pMessage);
-
-	void packingSectorMoveMessage(UINT64 accountNumber, WORD sectorX, WORD sectorY, CMessage* pMessage);
-
-	void packingChatMessage(UINT64 accountNumber, WCHAR* pPlayerID, DWORD cbPlayerID, WCHAR* pPlayerNickName, DWORD cbPlayerNickName, WORD chatLength, WCHAR* pChat, CMessage* pMessage);
-
-
-
-
-	LONG mUpdateTPS;
-
-	BOOL mbStopFlag;
-
-	BOOL mbUpdateLoopFlag;
-
-	DWORD mPlayerCount;
-
-	DWORD mAuthenticThreadID;
-
-	DWORD mUpdateThreadID;
-
-	CLanLoginClient* mpLanLoginClient;
-
+	unsigned int mAuthenticThreadID;
+	unsigned int mUpdateThreadID;
 	HANDLE mUpdateThreadHandle;
-
 	HANDLE mAuthenticThreadHandle;
 
 	HANDLE mUpdateEvent;
-
 	HANDLE mAuthenticEvent;
+
+	long mUpdateTPS;
+	int mPlayerCount;
 
 	CRedisConnector mRedisConnector;
 
+	CLockFreeQueue<CJob*> mJobQueue;
+	CTemplateQueue<CJob*> mAuthenticJobQueue;
+	
+	// key : sessionID, value : AccountNo 
+	std::unordered_map<unsigned long long, unsigned long long> mAccountNoMap;
+
+	// key : accountNo, value : CPlayer*
+	std::unordered_map<unsigned long long, CPlayer*> mPlayerMap;
+
+	// key : accountNo, value : CPlayer*
+	std::unordered_map<unsigned long long, CPlayer*> mPlayerSectorMap[chattingserver::SECTOR_MAX_HEIGHT][chattingserver::SECTOR_MAX_WIDTH];
+
 	// 서버를 가동할 때 주변 섹터를 미리 구해놓는다.
 	stSectorAround mSectorAround[chattingserver::SECTOR_MAX_HEIGHT][chattingserver::SECTOR_MAX_WIDTH];
-
-	CLockFreeQueue<CJob*> mJobQueue;
-
-	CTemplateRingBuffer<CJob*> mAuthenticJobQueue;
-
-	// 로그인
-	// key : sessionID, value : CConnectionState*
-	std::unordered_map<UINT64, CChattingServer::CConnectionState*> mConnectionStateMap;
-
-	// key : accountNo, value : CPlayer*
-	std::unordered_map<UINT64, CPlayer*> mPlayerMap;
-
-	// key : accountNo, value : CPlayer*
-	std::unordered_map<UINT64, CPlayer*> mSectorArray[chattingserver::SECTOR_MAX_HEIGHT][chattingserver::SECTOR_MAX_WIDTH];
-	
 };
 

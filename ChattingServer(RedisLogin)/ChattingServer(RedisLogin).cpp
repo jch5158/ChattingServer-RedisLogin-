@@ -1,15 +1,15 @@
 ﻿#include "stdafx.h"
-#include "ServerControl.h"
+#include "ServerController.h"
 
 BOOL SetupLogSystem(void);
 
-BOOL ParseChatServer(WCHAR* pServerIP, DWORD serverIPCb, INT* pServerPort, INT* pbServerNagleFlag, INT* pMaxMessageSize, BYTE* pHeaderCode, BYTE* pStaticKey, INT* pServerRunningThreadCount, INT* pServerWorkerThreadCount, INT* pMaxClientCount);
+BOOL ParseChatServer(WCHAR* pServerIP, DWORD serverIPCb, INT* pServerPort, INT* pbServerNagleFlag, INT* pbTimeoutFlag, INT* pMaxMessageSize, BYTE* pHeaderCode, BYTE* pStaticKey, INT* pTimeoutSec, INT* pServerRunningThreadCount, INT* pServerWorkerThreadCount, INT* pMaxClientCount);
 
 BOOL ParseMonitoringClient(WCHAR* pServerIP, DWORD serverIPCb, INT* pServerPort, INT* pbClientNagleFlag, INT* pClientRunningThreadCount, INT *pClientWorkerThreadCount, INT* pServerNo);
 
 BOOL ParseLanLoginClient(WCHAR* pServerIP, DWORD serverIPCb, INT* pServerPort, INT* pbClientNagleFlag, INT* pClientRunningThreadCount, INT* pClientWorkerThreadCount);
 
-BOOL ChatServerOn(CNetServer** pChatServer, CLanClient *pLanLoginClient, WCHAR* pServerIP, INT serverPort, BOOL bServerNagleFlag, INT maxMessageSize, BYTE headerCode, BYTE staticKey, INT runningThreadCount, INT workerThreadCount, INT maxClientCount);
+BOOL ChatServerOn(CNetServer** pChatServer, CLanClient *pLanLoginClient, WCHAR* pServerIP, INT serverPort, BOOL bServerNagleFlag, BOOL bTimeout, INT maxMessageSize, BYTE headerCode, BYTE staticKey, INT timeoutSec, INT runningThreadCount, INT workerThreadCount, INT maxClientCount);
 
 BOOL MonitoringClientOn(CLanClient** pLanMonitoringClient, CNetServer** pChatServer, WCHAR* pServerIP, INT serverPort, BOOL bMonitoringClientNagleFlag, INT monitoringClientRunningThreadCount, INT monitoringClientWorkerThreadCount, INT chatServerNo);
 
@@ -30,9 +30,11 @@ INT wmain()
 	WCHAR chatServerIP[MAX_PATH] = { 0, };	
 	INT chatServerPort;
 	INT bChatServerNagleFlag;
+	INT bTimeout;
 	INT maxMessageSize;
 	BYTE headerCode;
 	BYTE staticKey;
+	INT timeoutSec;
 	INT chatServerRunningThreadCount;
 	INT chatServerWorkerThreadCount;
 	INT maxClientCount;
@@ -57,7 +59,7 @@ INT wmain()
 	
 	setlocale(LC_ALL, "");
 	
-	//CPerformanceProfiler::SetPerformanceProfiler(L"ChattingServer", 15);
+	CTLSPerformanceProfiler::SetPerformanceProfiler(L"ChattingServer", 15);
 	
 	do
 	{
@@ -66,7 +68,7 @@ INT wmain()
 			break;
 		}
 
-		if (ParseChatServer(chatServerIP, _countof(chatServerIP), &chatServerPort, &bChatServerNagleFlag, &maxMessageSize, &headerCode, &staticKey, &chatServerRunningThreadCount, &chatServerWorkerThreadCount, &maxClientCount) == FALSE)
+		if (ParseChatServer(chatServerIP, _countof(chatServerIP), &chatServerPort, &bChatServerNagleFlag, &bTimeout,&maxMessageSize, &headerCode, &staticKey, &timeoutSec, &chatServerRunningThreadCount, &chatServerWorkerThreadCount, &maxClientCount) == FALSE)
 		{
 			break;
 		}
@@ -86,7 +88,7 @@ INT wmain()
 			break;
 		}
 
-		if (ChatServerOn(&pChatServer, pLanLoginClient, chatServerIP, chatServerPort, bChatServerNagleFlag, maxMessageSize, headerCode, staticKey, chatServerRunningThreadCount, chatServerWorkerThreadCount, maxClientCount) == FALSE)
+		if (ChatServerOn(&pChatServer, pLanLoginClient, chatServerIP, chatServerPort, bChatServerNagleFlag, bTimeout, maxMessageSize, headerCode, staticKey, timeoutSec,chatServerRunningThreadCount, chatServerWorkerThreadCount, maxClientCount) == FALSE)
 		{
 			break;
 		}
@@ -195,7 +197,7 @@ BOOL SetupLogSystem(void)
 	return TRUE;
 }
 
-BOOL ParseChatServer(WCHAR* pServerIP, DWORD serverIPCb, INT* pServerPort, INT* pbServerNagleFlag, INT* pMaxMessageSize, BYTE* pHeaderCode, BYTE* pStaticKey, INT* pServerRunningThreadCount, INT* pServerWorkerThreadCount, INT* pMaxClientCount)
+BOOL ParseChatServer(WCHAR* pServerIP, DWORD serverIPCb, INT* pServerPort, INT* pbServerNagleFlag, INT *pbTimeout, INT* pMaxMessageSize, BYTE* pHeaderCode, BYTE* pStaticKey, INT* pTimeoutSec, INT* pServerRunningThreadCount, INT* pServerWorkerThreadCount, INT* pMaxClientCount)
 {
 	WCHAR pBuffer[MAX_PATH] = { 0, };
 
@@ -223,6 +225,20 @@ BOOL ParseChatServer(WCHAR* pServerIP, DWORD serverIPCb, INT* pServerPort, INT* 
 	}
 
 	if (parser.GetNamespaceValue(L"CHATTING_SERVER", L"NAGLE_OPTION", pbServerNagleFlag) == FALSE)
+	{
+		CSystemLog::GetInstance()->Log(TRUE, CSystemLog::eLogLevel::LogLevelError, L"ChattingServer", L"[ParseServerConfigFile] NAGLE_OPTION Not Found");
+
+		return FALSE;
+	}
+
+	if (parser.GetNamespaceValue(L"CHATTING_SERVER", L"TIMEOUT", pbTimeout) == FALSE)
+	{
+		CSystemLog::GetInstance()->Log(TRUE, CSystemLog::eLogLevel::LogLevelError, L"ChattingServer", L"[ParseServerConfigFile] NAGLE_OPTION Not Found");
+
+		return FALSE;
+	}
+
+	if (parser.GetNamespaceValue(L"CHATTING_SERVER", L"TIMEOUT_SEC", pTimeoutSec) == FALSE)
 	{
 		CSystemLog::GetInstance()->Log(TRUE, CSystemLog::eLogLevel::LogLevelError, L"ChattingServer", L"[ParseServerConfigFile] NAGLE_OPTION Not Found");
 
@@ -387,14 +403,14 @@ BOOL ParseLanLoginClient(WCHAR* pServerIP, DWORD serverIPCb, INT* pServerPort, I
 	return TRUE;
 }
 
-BOOL ChatServerOn(CNetServer** pChatServer, CLanClient *pLanLoginClient, WCHAR* pServerIP, INT serverPort, BOOL bServerNagleFlag, INT maxMessageSize, BYTE headerCode, BYTE staticKey, INT runningThreadCount, INT workerThreadCount, INT maxClientCount) 
+BOOL ChatServerOn(CNetServer** pChatServer, CLanClient *pLanLoginClient, WCHAR* pServerIP, INT serverPort, BOOL bServerNagleFlag, BOOL bTimeout, INT maxMessageSize, BYTE headerCode, BYTE staticKey, INT timeoutSec, INT runningThreadCount, INT workerThreadCount, INT maxClientCount) 
 {
 	*pChatServer = new CChattingServer;
 
 	((CChattingServer*)(*pChatServer))->SetLoginClient((CLanLoginClient*)pLanLoginClient);
 
 	if ((*pChatServer)->Start(
-		pServerIP, serverPort, serverPort, bServerNagleFlag, headerCode, staticKey, runningThreadCount, workerThreadCount, maxClientCount
+		pServerIP, serverPort, serverPort, bServerNagleFlag, bTimeout, headerCode, staticKey, timeoutSec,runningThreadCount, workerThreadCount, maxClientCount
 	) == FALSE)
 	{
 		CSystemLog::GetInstance()->Log(TRUE, CSystemLog::eLogLevel::LogLevelError, L"ChattingServer", L"[ChatServerOn] Server Start is Failed");

@@ -3,6 +3,15 @@
 
 class CJob
 {
+private:
+
+	CJob(void);
+
+	~CJob(void);
+
+	template <class DATA>
+	friend class CTLSLockFreeObjectFreeList;
+
 public:
 
 	enum class eJobType
@@ -14,47 +23,9 @@ public:
 		SERVER_STOP_JOB
 	};
 
-	template <class DATA>
-	friend class CLockFreeObjectFreeList;
+	static CJob* Alloc(void);
 
-	template <class DATA>
-	friend class CTLSLockFreeObjectFreeList;
-
-
-	inline static CJob* Alloc(void)
-	{	
-		//CPerformanceProfiler performance(L"Job Alloc");
-
-		CJob* pJob = mJobFreeList.Alloc();
-
-		//pJob->Clear();
-
-		return pJob;
-	}
-
-	void Free(void)
-	{
-		//CPerformanceProfiler performance(L"Job Free");
-
-		if (mJobFreeList.Free(this) == FALSE)
-		{
-			CSystemLog::GetInstance()->Log(FALSE, CSystemLog::eLogLevel::LogLevelError, L"[ChattingServer]", L"[Free] Job Free Error");
-
-			CCrashDump::Crash();
-
-			return;
-		}
-
-		return;
-	}
-
-
-	inline void Clear(void)
-	{
-		mJobType = eJobType::CLIENT_JOIN_JOB;
-		mSessionID = -1;
-		mpMessage = nullptr;
-	}
+	void Free(void);
 
 	eJobType mJobType;
 
@@ -74,24 +45,5 @@ public:
 
 private:
 
-	CJob(void)
-		: mJobType(eJobType::CLIENT_JOIN_JOB)
-		, mSessionID(-1)
-		, mpMessage(nullptr)
-		, mPlayerID{0,}
-		, mPlayerNickName{0,}
-		, mSessionKey{ 0, }
-	{
-	}
-
-	~CJob(void)
-	{
-
-	}
-
-	//inline static CLockFreeObjectFreeList<CJob> mJobFreeList = { 100, FALSE };
-
-	inline static CTLSLockFreeObjectFreeList<CJob> mJobFreeList = { 0, FALSE };
-
+	static CTLSLockFreeObjectFreeList<CJob> mJobFreeList;
 };
-
